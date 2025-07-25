@@ -24,9 +24,9 @@ from app.openai_image_ops import (
     generate_image,
     generate_image_variations,
 )
-from app.openai_pdf_ops import (
-    append_pdf_content_if_exists,
-    can_process_pdf_files,
+from app.file_handlers import (
+    append_file_content_if_exists,
+    can_process_files,
 )
 from app.openai_ops import (
     start_receiving_openai_response,
@@ -154,6 +154,14 @@ def respond_to_app_mention(
                         content=content,
                         logger=context.logger,
                     )
+                
+                if reply.get("bot_id") is None and can_process_files(context):
+                    append_file_content_if_exists(
+                        bot_token=context.bot_token,
+                        files=reply.get("files"),
+                        content=content,
+                        logger=logger,
+                    )
 
                 messages.append(
                     {
@@ -184,8 +192,8 @@ def respond_to_app_mention(
                     logger=context.logger,
                 )
             
-            if payload.get("bot_id") is None and can_process_pdf_files(context):
-                append_pdf_content_if_exists(
+            if payload.get("bot_id") is None and can_process_files(context):
+                append_file_content_if_exists(
                     bot_token=context.bot_token,
                     files=payload.get("files"),
                     content=content,
@@ -314,17 +322,8 @@ def respond_to_new_message(
         messages_in_context = []
         if is_in_dm_with_bot is True and thread_ts is None:
             # In the DM with the bot; this is not within a thread
-            past_messages = client.conversations_history(
-                channel=context.channel_id,
-                include_all_metadata=True,
-                limit=100,
-            ).get("messages", [])
-            past_messages.reverse()
-            # Remove old messages
-            for message in past_messages:
-                seconds = time.time() - float(message.get("ts"))
-                if seconds < 86400:  # less than 1 day
-                    messages_in_context.append(message)
+            # Start a fresh context with only the current message
+            messages_in_context = [payload]
             is_thread_for_this_app = True
         else:
             # Within a thread
@@ -422,8 +421,8 @@ def respond_to_new_message(
                     logger=context.logger,
                 )
             
-            if reply.get("bot_id") is None and can_process_pdf_files(context):
-                append_pdf_content_if_exists(
+            if reply.get("bot_id") is None and can_process_files(context):
+                append_file_content_if_exists(
                     bot_token=context.bot_token,
                     files=reply.get("files"),
                     content=content,
@@ -447,7 +446,7 @@ def respond_to_new_message(
         wip_reply = post_wip_message(
             client=client,
             channel=context.channel_id,
-            thread_ts=payload.get("thread_ts") if is_in_dm_with_bot else payload["ts"],
+            thread_ts=payload.get("thread_ts") or payload["ts"],
             loading_text=loading_text,
             messages=messages,
             user=user_id,

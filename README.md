@@ -27,6 +27,18 @@ With ChatGPT, you don't need to ask a perfectly formulated question at first. Ad
 
 Doesn't that sound cool? 😎
 
+## File Support
+
+This app can process various file types when `FILE_ACCESS_ENABLED=true`:
+
+- **Images**: JPEG, PNG, GIF, WebP (for vision-enabled models like GPT-4o)
+- **Documents**: PDF, Word (.doc, .docx)
+- **Spreadsheets**: Excel (.xlsx), CSV
+- **Text Files**: Plain text (.txt), Markdown (.md), JSON
+- **Code Files**: Python, JavaScript, Java, C++, and many more
+
+Simply upload files with your message, and the bot will extract and include their content in the conversation context.
+
 ## Three Supported Interfaces
 
 There are three interfaces to use. When you want to share a conversation with others in the Slack workspace, always using channel threads is the best option. If you wish to use ChatGPT privately, the other interfaces are more convenient for that purpose.
@@ -43,7 +55,9 @@ This is the most common way to use this app. You can start a conversation with C
 
 ### Talk to the bot in a 1:1 DM
 
-You can privately ask for help using a 1:1 DM with the bot. No need to mention the bot. Just send a message in the DM:
+You can privately ask for help using a 1:1 DM with the bot. No need to mention the bot. Just send a message in the DM, and the bot will reply in a thread.
+
+**Important**: Each new message in the DM starts a fresh conversation. The bot only maintains context within each thread, not across the entire DM history. This allows you to have multiple independent conversations and easily control when to start fresh.
 
 <img width="700" src="https://github.com/seratch/ChatGPT-in-Slack/assets/19658/eadb7930-4e43-4a95-80ff-7263d02313b1">
 
@@ -103,7 +117,8 @@ export SLACK_APP_LOG_LEVEL=INFO
 export TRANSLATE_MARKDOWN=true
 # Optional: When the string is "true", perform some basic redaction on prompts sent to OpenAI (default: false)
 export REDACTION_ENABLED=true
-# Optional: When the string is "true", this app shares files (images, PDFs, etc.) with OpenAI (default: false)
+# Optional: When the string is "true", this app shares files with OpenAI (default: false)
+# Supported file types: Images, PDFs, Word docs, Excel, CSV, JSON, plain text, and code files
 export FILE_ACCESS_ENABLED=true
 
 # To use Azure OpenAI, set the following optional environment variables according to your environment
