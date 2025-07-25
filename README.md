@@ -103,8 +103,8 @@ export SLACK_APP_LOG_LEVEL=INFO
 export TRANSLATE_MARKDOWN=true
 # Optional: When the string is "true", perform some basic redaction on prompts sent to OpenAI (default: false)
 export REDACTION_ENABLED=true
-# Optional: When the string is "true", this app shares image files with OpenAI (default: false)
-export IMAGE_FILE_ACCESS_ENABLED=true
+# Optional: When the string is "true", this app shares files (images, PDFs, etc.) with OpenAI (default: false)
+export FILE_ACCESS_ENABLED=true
 
 # To use Azure OpenAI, set the following optional environment variables according to your environment
 # default: None

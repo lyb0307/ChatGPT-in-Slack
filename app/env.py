@@ -56,8 +56,8 @@ SLACK_APP_LOG_LEVEL = os.environ.get("SLACK_APP_LOG_LEVEL", "DEBUG")
 TRANSLATE_MARKDOWN = os.environ.get("TRANSLATE_MARKDOWN", "false") == "true"
 
 REDACTION_ENABLED = os.environ.get("REDACTION_ENABLED", "false") == "true"
-IMAGE_FILE_ACCESS_ENABLED = (
-    os.environ.get("IMAGE_FILE_ACCESS_ENABLED", "false") == "true"
+FILE_ACCESS_ENABLED = (
+    os.environ.get("FILE_ACCESS_ENABLED", "false") == "true"
 )
 
 # Redaction patterns

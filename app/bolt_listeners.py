@@ -24,6 +24,10 @@ from app.openai_image_ops import (
     generate_image,
     generate_image_variations,
 )
+from app.openai_pdf_ops import (
+    append_pdf_content_if_exists,
+    can_process_pdf_files,
+)
 from app.openai_ops import (
     start_receiving_openai_response,
     format_openai_message_content,
@@ -178,6 +182,14 @@ def respond_to_app_mention(
                     files=payload.get("files"),
                     content=content,
                     logger=context.logger,
+                )
+            
+            if payload.get("bot_id") is None and can_process_pdf_files(context):
+                append_pdf_content_if_exists(
+                    bot_token=context.bot_token,
+                    files=payload.get("files"),
+                    content=content,
+                    logger=logger,
                 )
 
             messages.append({"role": "user", "content": content})
@@ -408,6 +420,14 @@ def respond_to_new_message(
                     files=reply.get("files"),
                     content=content,
                     logger=context.logger,
+                )
+            
+            if reply.get("bot_id") is None and can_process_pdf_files(context):
+                append_pdf_content_if_exists(
+                    bot_token=context.bot_token,
+                    files=reply.get("files"),
+                    content=content,
+                    logger=logger,
                 )
 
             messages.append(

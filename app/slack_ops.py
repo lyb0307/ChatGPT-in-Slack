@@ -7,8 +7,22 @@ from slack_sdk.web import WebClient, SlackResponse
 from slack_sdk.errors import SlackApiError
 from slack_bolt import BoltContext
 
-from app.env import IMAGE_FILE_ACCESS_ENABLED
+from app.env import FILE_ACCESS_ENABLED
 from app.markdown_conversion import slack_to_markdown
+
+
+__all__ = [
+    "find_parent_message",
+    "is_this_app_mentioned",
+    "build_thread_replies_as_combined_text",
+    "post_wip_message",
+    "update_wip_message",
+    "extract_state_value",
+    "can_send_image_url_to_openai",
+    "can_access_slack_files",
+    "download_slack_image_content",
+    "download_slack_file_content",
+]
 
 
 # ----------------------------
@@ -126,7 +140,7 @@ def extract_state_value(payload: dict, block_id: str, action_id: str = "input") 
 
 
 def can_send_image_url_to_openai(context: BoltContext) -> bool:
-    if IMAGE_FILE_ACCESS_ENABLED is False:
+    if FILE_ACCESS_ENABLED is False:
         return False
     bot_scopes = context.authorize_result.bot_scopes or []
     can_access_files = context and "files:read" in bot_scopes
@@ -139,6 +153,17 @@ def can_send_image_url_to_openai(context: BoltContext) -> bool:
         openai_model.startswith("gpt-4o") or openai_model.startswith("gpt-4.1")
     )
     return can_send_image_url
+
+
+def can_access_slack_files(context: BoltContext) -> bool:
+    """
+    Check if the bot has permission to access Slack files.
+    This is a more generic check that doesn't depend on specific OpenAI models.
+    """
+    if FILE_ACCESS_ENABLED is False:
+        return False
+    bot_scopes = context.authorize_result.bot_scopes or []
+    return "files:read" in bot_scopes
 
 
 def download_slack_image_content(image_url: str, bot_token: str) -> bytes:
@@ -157,6 +182,33 @@ def download_slack_image_content(image_url: str, bot_token: str) -> bytes:
 
     if not content_type.startswith("image/"):
         error = f"The responded content-type is not for image data: {content_type}"
+        raise SlackApiError(error, response)
+
+    return response.content
+
+
+def download_slack_file_content(file_url: str, bot_token: str) -> bytes:
+    """
+    Download any file from Slack (not just images).
+    
+    Args:
+        file_url: The Slack file URL (usually url_private)
+        bot_token: The bot token for authentication
+        
+    Returns:
+        The file content as bytes
+    """
+    response = requests.get(
+        file_url,
+        headers={"Authorization": f"Bearer {bot_token}"},
+    )
+    if response.status_code != 200:
+        error = f"Request to {file_url} failed with status code {response.status_code}"
+        raise SlackApiError(error, response)
+
+    content_type = response.headers.get("content-type", "")
+    if content_type.startswith("text/html"):
+        error = f"You don't have the permission to download this file: {file_url}"
         raise SlackApiError(error, response)
 
     return response.content
