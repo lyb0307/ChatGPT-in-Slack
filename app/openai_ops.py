@@ -61,17 +61,19 @@ from app.slack_ops import update_wip_message
 _prompt_tokens_used_by_function_call_cache: Optional[int] = None
 
 
-def get_max_tokens_param(model: str) -> dict:
+def get_model_specific_params(model: str) -> dict:
     """
-    Returns the appropriate max tokens parameter based on the model.
-    GPT-5 models use 'max_completion_tokens' while earlier models use 'max_tokens'.
+    Returns model-specific parameters based on the model type.
+    GPT-5 models have different parameter requirements than earlier models.
     """
     if model and (
         model.startswith("gpt-5") or model in [GPT_5_MODEL, GPT_5_MINI_MODEL]
     ):
+        # GPT-5 models use different parameters
         return {"max_completion_tokens": MAX_TOKENS}
     else:
-        return {"max_tokens": MAX_TOKENS}
+        # Earlier models use traditional parameters
+        return {"max_tokens": MAX_TOKENS, "logit_bias": {}}
 
 
 # Format message from Slack to send to OpenAI
@@ -152,14 +154,13 @@ def make_synchronous_openai_call(
         messages=messages,
         top_p=1,
         n=1,
-        **get_max_tokens_param(model),
         temperature=temperature,
         presence_penalty=0,
         frequency_penalty=0,
-        logit_bias={},
         user=user,
         stream=False,
         timeout=timeout_seconds,
+        **get_model_specific_params(model),
     )
 
 
@@ -198,13 +199,12 @@ def start_receiving_openai_response(
         messages=messages,
         top_p=1,
         n=1,
-        **get_max_tokens_param(model),
         temperature=temperature,
         presence_penalty=0,
         frequency_penalty=0,
-        logit_bias={},
         user=user,
         stream=True,
+        **get_model_specific_params(model),
         **kwargs,
     )
 
@@ -564,8 +564,8 @@ def calculate_tokens_necessary_for_function_call(context: BoltContext) -> int:
         return client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": "hello"}],
-            **get_max_tokens_param(model),
             user="system",
+            **get_model_specific_params(model),
             **({"functions": functions} if functions is not None else {}),
         ).model_dump()["usage"]["prompt_tokens"]
 

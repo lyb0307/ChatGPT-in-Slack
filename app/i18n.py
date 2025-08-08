@@ -5,7 +5,7 @@ from openai.lib.azure import AzureOpenAI
 from slack_bolt import BoltContext
 
 from .openai_constants import GPT_4O_MINI_MODEL
-from .openai_ops import get_max_tokens_param
+from .openai_ops import get_model_specific_params
 
 # All the supported languages for Slack app as of March 2023
 _locale_to_lang = {
@@ -81,12 +81,11 @@ def translate(*, openai_api_key: Optional[str], context: BoltContext, text: str)
         ],
         top_p=1,
         n=1,
-        **get_max_tokens_param(model),
         temperature=1,
         presence_penalty=0,
         frequency_penalty=0,
-        logit_bias={},
         user="system",
+        **get_model_specific_params(model),
     )
     translated_text = response.model_dump()["choices"][0]["message"].get("content")
     _translation_result_cache[f"{lang}:{text}"] = translated_text
