@@ -5,6 +5,7 @@ from openai.lib.azure import AzureOpenAI
 from slack_bolt import BoltContext
 
 from .openai_constants import GPT_4O_MINI_MODEL
+from .openai_ops import get_max_tokens_param
 
 # All the supported languages for Slack app as of March 2023
 _locale_to_lang = {
@@ -56,8 +57,9 @@ def translate(*, openai_api_key: Optional[str], context: BoltContext, text: str)
             api_key=openai_api_key,
             base_url=context.get("OPENAI_API_BASE"),
         )
+    model = GPT_4O_MINI_MODEL
     response = client.chat.completions.create(
-        model=GPT_4O_MINI_MODEL,
+        model=model,
         messages=[
             {
                 "role": "system",
@@ -79,7 +81,7 @@ def translate(*, openai_api_key: Optional[str], context: BoltContext, text: str)
         ],
         top_p=1,
         n=1,
-        max_tokens=1024,
+        **get_max_tokens_param(model),
         temperature=1,
         presence_penalty=0,
         frequency_penalty=0,

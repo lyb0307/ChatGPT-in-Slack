@@ -61,6 +61,19 @@ from app.slack_ops import update_wip_message
 _prompt_tokens_used_by_function_call_cache: Optional[int] = None
 
 
+def get_max_tokens_param(model: str) -> dict:
+    """
+    Returns the appropriate max tokens parameter based on the model.
+    GPT-5 models use 'max_completion_tokens' while earlier models use 'max_tokens'.
+    """
+    if model and (
+        model.startswith("gpt-5") or model in [GPT_5_MODEL, GPT_5_MINI_MODEL]
+    ):
+        return {"max_completion_tokens": MAX_TOKENS}
+    else:
+        return {"max_tokens": MAX_TOKENS}
+
+
 # Format message from Slack to send to OpenAI
 def format_openai_message_content(
     content: str, translate_markdown: bool
@@ -139,7 +152,7 @@ def make_synchronous_openai_call(
         messages=messages,
         top_p=1,
         n=1,
-        max_tokens=MAX_TOKENS,
+        **get_max_tokens_param(model),
         temperature=temperature,
         presence_penalty=0,
         frequency_penalty=0,
@@ -185,7 +198,7 @@ def start_receiving_openai_response(
         messages=messages,
         top_p=1,
         n=1,
-        max_tokens=MAX_TOKENS,
+        **get_max_tokens_param(model),
         temperature=temperature,
         presence_penalty=0,
         frequency_penalty=0,
@@ -547,10 +560,11 @@ def calculate_tokens_necessary_for_function_call(context: BoltContext) -> int:
 
     def _calculate_prompt_tokens(functions) -> int:
         client = create_openai_client(context)
+        model = context.get("OPENAI_MODEL")
         return client.chat.completions.create(
-            model=context.get("OPENAI_MODEL"),
+            model=model,
             messages=[{"role": "user", "content": "hello"}],
-            max_tokens=1024,
+            **get_max_tokens_param(model),
             user="system",
             **({"functions": functions} if functions is not None else {}),
         ).model_dump()["usage"]["prompt_tokens"]
