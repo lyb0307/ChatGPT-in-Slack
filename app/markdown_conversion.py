@@ -38,16 +38,16 @@ def markdown_to_slack(content: str) -> str:
             # First handle headers - must be done before other formatting
             # Convert markdown headers to bold text
             part = re.sub(r"^#{1,6}\s+(.+)$", r"*\1*", part, flags=re.MULTILINE)
-            
+
             # Convert markdown lists to bullet points
             # Unordered lists with -, *, or +
             part = re.sub(r"^[\-\*\+]\s+(.+)$", r"• \1", part, flags=re.MULTILINE)
             # Ordered lists
             part = re.sub(r"^\d+\.\s+(.+)$", r"• \1", part, flags=re.MULTILINE)
-            
+
             # Convert markdown links [text](url) to <url|text>
             part = re.sub(r"\[([^\]]+)\]\(([^\)]+)\)", r"<\2|\1>", part)
-            
+
             # Handle emphasis and other formatting
             for o, n in [
                 (

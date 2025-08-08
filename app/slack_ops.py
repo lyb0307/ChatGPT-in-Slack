@@ -150,7 +150,9 @@ def can_send_image_url_to_openai(context: BoltContext) -> bool:
     openai_model = context.get("OPENAI_MODEL")
     # More supported models will come. This logic will need to be updated then.
     can_send_image_url = openai_model is not None and (
-        openai_model.startswith("gpt-4o") or openai_model.startswith("gpt-4.1")
+        openai_model.startswith("gpt-4o")
+        or openai_model.startswith("gpt-4.1")
+        or openai_model.startswith("gpt-5")
     )
     return can_send_image_url
 
@@ -190,11 +192,11 @@ def download_slack_image_content(image_url: str, bot_token: str) -> bytes:
 def download_slack_file_content(file_url: str, bot_token: str) -> bytes:
     """
     Download any file from Slack (not just images).
-    
+
     Args:
         file_url: The Slack file URL (usually url_private)
         bot_token: The bot token for authentication
-        
+
     Returns:
         The file content as bytes
     """

@@ -14,7 +14,7 @@ OPENAI_TIMEOUT_SECONDS = int(
     os.environ.get("OPENAI_TIMEOUT_SECONDS", DEFAULT_OPENAI_TIMEOUT_SECONDS)
 )
 
-DEFAULT_OPENAI_MODEL = "gpt-3.5-turbo"
+DEFAULT_OPENAI_MODEL = "gpt-5"
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
 
 DEFAULT_OPENAI_IMAGE_GENERATION_MODEL = "dall-e-3"
@@ -56,9 +56,7 @@ SLACK_APP_LOG_LEVEL = os.environ.get("SLACK_APP_LOG_LEVEL", "DEBUG")
 TRANSLATE_MARKDOWN = os.environ.get("TRANSLATE_MARKDOWN", "false") == "true"
 
 REDACTION_ENABLED = os.environ.get("REDACTION_ENABLED", "false") == "true"
-FILE_ACCESS_ENABLED = (
-    os.environ.get("FILE_ACCESS_ENABLED", "false") == "true"
-)
+FILE_ACCESS_ENABLED = os.environ.get("FILE_ACCESS_ENABLED", "false") == "true"
 
 # Redaction patterns
 #

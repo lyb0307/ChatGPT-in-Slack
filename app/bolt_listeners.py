@@ -154,7 +154,7 @@ def respond_to_app_mention(
                         content=content,
                         logger=context.logger,
                     )
-                
+
                 if reply.get("bot_id") is None and can_process_files(context):
                     append_file_content_if_exists(
                         bot_token=context.bot_token,
@@ -191,7 +191,7 @@ def respond_to_app_mention(
                     content=content,
                     logger=context.logger,
                 )
-            
+
             if payload.get("bot_id") is None and can_process_files(context):
                 append_file_content_if_exists(
                     bot_token=context.bot_token,
@@ -420,7 +420,7 @@ def respond_to_new_message(
                     content=content,
                     logger=context.logger,
                 )
-            
+
             if reply.get("bot_id") is None and can_process_files(context):
                 append_file_content_if_exists(
                     bot_token=context.bot_token,

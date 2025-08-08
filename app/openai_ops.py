@@ -45,6 +45,10 @@ from app.openai_constants import (
     GPT_4_1_MINI_2025_04_14_MODEL,
     GPT_4_1_NANO_MODEL,
     GPT_4_1_NANO_2025_04_14_MODEL,
+    GPT_5_MODEL,
+    GPT_5_2025_08_08_MODEL,
+    GPT_5_MINI_MODEL,
+    GPT_5_MINI_2025_08_08_MODEL,
     MODEL_TOKENS,
     MODEL_FALLBACKS,
 )
@@ -362,6 +366,12 @@ def context_length(
     elif model == GPT_4_1_NANO_MODEL:
         # Note that GPT_4_1_NANO_MODEL may change over time. Return context length assuming GPT_4_1_NANO_2025_04_14_MODEL.
         return context_length(model=GPT_4_1_NANO_2025_04_14_MODEL)
+    elif model == GPT_5_MODEL:
+        # Note that GPT_5_MODEL may change over time. Return context length assuming GPT_5_2025_08_08_MODEL.
+        return context_length(model=GPT_5_2025_08_08_MODEL)
+    elif model == GPT_5_MINI_MODEL:
+        # Note that GPT_5_MINI_MODEL may change over time. Return context length assuming GPT_5_MINI_2025_08_08_MODEL.
+        return context_length(model=GPT_5_MINI_2025_08_08_MODEL)
     elif model == GPT_3_5_TURBO_0301_MODEL or model == GPT_3_5_TURBO_0613_MODEL:
         return 4096
     elif (
@@ -383,6 +393,13 @@ def context_length(
         or model == GPT_4_1_NANO_2025_04_14_MODEL
     ):
         return 1048576
+    elif (
+        model == GPT_5_MODEL
+        or model == GPT_5_2025_08_08_MODEL
+        or model == GPT_5_MINI_MODEL
+        or model == GPT_5_MINI_2025_08_08_MODEL
+    ):
+        return 2097152  # 2M context for GPT-5 models
     elif (
         model == GPT_4_1106_PREVIEW_MODEL
         or model == GPT_4_0125_PREVIEW_MODEL
