@@ -105,7 +105,7 @@ def post_wip_message(
     )
 
 
-def split_long_message(text: str, max_length: int = 3000) -> List[str]:
+def split_long_message(text: str, max_length: int = 2000) -> List[str]:
     """
     Split a long message into multiple parts without breaking words or code blocks.
 
