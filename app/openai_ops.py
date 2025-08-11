@@ -3,7 +3,7 @@ import threading
 import time
 import re
 import json
-from typing import List, Dict, Tuple, Optional, Union
+from typing import List, Dict, Tuple, Optional, Union, Any
 from importlib import import_module
 
 from openai import OpenAI, Stream
@@ -57,6 +57,59 @@ from app.slack_ops import update_wip_message
 # ----------------------------
 # Internal functions
 # ----------------------------
+
+
+def check_api_availability(client) -> str:
+    """Check which OpenAI API is available"""
+    has_responses = hasattr(client, "responses") and hasattr(client.responses, "create")
+    has_chat = hasattr(client, "chat") and hasattr(client.chat, "completions")
+
+    # Prefer new API if available, fallback to old API
+    if has_responses:
+        return "responses"
+    elif has_chat:
+        return "chat"
+    else:
+        raise ValueError("No compatible OpenAI API found")
+
+
+def convert_messages_to_response_format(
+    messages: List[Dict[str, Union[str, Dict[str, str]]]],
+) -> Tuple[str, Optional[str]]:
+    """
+    Convert chat completion messages format to the new responses API format.
+    Returns (input, instructions) tuple.
+    """
+    system_messages = []
+    user_messages = []
+    assistant_messages = []
+
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content", "")
+
+        if role == "system":
+            system_messages.append(content)
+        elif role == "user":
+            user_messages.append(f"User: {content}")
+        elif role == "assistant":
+            assistant_messages.append(f"Assistant: {content}")
+
+    # Combine system messages as instructions
+    instructions = "\n".join(system_messages) if system_messages else None
+
+    # Combine conversation history as input
+    conversation = []
+    for i in range(max(len(user_messages), len(assistant_messages))):
+        if i < len(user_messages):
+            conversation.append(user_messages[i])
+        if i < len(assistant_messages):
+            conversation.append(assistant_messages[i])
+
+    input_text = "\n".join(conversation) if conversation else ""
+
+    return input_text, instructions
+
 
 _prompt_tokens_used_by_function_call_cache: Optional[int] = None
 
@@ -135,7 +188,7 @@ def make_synchronous_openai_call(
     openai_deployment_id: str,
     openai_organization_id: Optional[str],
     timeout_seconds: int,
-) -> Completion:
+) -> Any:
     if openai_api_type == "azure":
         client = AzureOpenAI(
             api_key=openai_api_key,
@@ -149,19 +202,44 @@ def make_synchronous_openai_call(
             base_url=openai_api_base,
             organization=openai_organization_id,
         )
-    return client.chat.completions.create(
-        model=model,
-        messages=messages,
-        top_p=1,
-        n=1,
-        temperature=temperature,
-        presence_penalty=0,
-        frequency_penalty=0,
-        user=user,
-        stream=False,
-        timeout=timeout_seconds,
-        **get_model_specific_params(model),
-    )
+
+    # Check which API to use
+    api_type = check_api_availability(client)
+
+    if api_type == "responses":
+        # Use new responses API
+        input_text, instructions = convert_messages_to_response_format(messages)
+        model_params = get_model_specific_params(model)
+        max_output_tokens = model_params.get(
+            "max_completion_tokens"
+        ) or model_params.get("max_tokens", 1024)
+
+        return client.responses.create(
+            model=model,
+            input=input_text,
+            instructions=instructions,
+            max_output_tokens=max_output_tokens,
+            top_p=1,
+            temperature=temperature,
+            user=user,
+            stream=False,
+            timeout=timeout_seconds,
+        )
+    else:
+        # Fallback to old chat.completions API
+        return client.chat.completions.create(
+            model=model,
+            messages=messages,
+            top_p=1,
+            n=1,
+            temperature=temperature,
+            presence_penalty=0,
+            frequency_penalty=0,
+            user=user,
+            stream=False,
+            timeout=timeout_seconds,
+            **get_model_specific_params(model),
+        )
 
 
 def start_receiving_openai_response(
@@ -177,10 +255,13 @@ def start_receiving_openai_response(
     openai_deployment_id: str,
     openai_organization_id: Optional[str],
     function_call_module_name: Optional[str],
-) -> Stream[Completion]:
-    kwargs = {}
+) -> Any:
+    tools = None
     if function_call_module_name is not None:
-        kwargs["functions"] = import_module(function_call_module_name).functions
+        # Convert functions to tools format for new API
+        functions = import_module(function_call_module_name).functions
+        tools = [{"type": "function", "function": func} for func in functions]
+
     if openai_api_type == "azure":
         client = AzureOpenAI(
             api_key=openai_api_key,
@@ -194,19 +275,48 @@ def start_receiving_openai_response(
             base_url=openai_api_base,
             organization=openai_organization_id,
         )
-    return client.chat.completions.create(
-        model=model,
-        messages=messages,
-        top_p=1,
-        n=1,
-        temperature=temperature,
-        presence_penalty=0,
-        frequency_penalty=0,
-        user=user,
-        stream=True,
-        **get_model_specific_params(model),
-        **kwargs,
-    )
+
+    # Check which API to use
+    api_type = check_api_availability(client)
+
+    if api_type == "responses":
+        # Use new responses API
+        input_text, instructions = convert_messages_to_response_format(messages)
+        model_params = get_model_specific_params(model)
+        max_output_tokens = model_params.get(
+            "max_completion_tokens"
+        ) or model_params.get("max_tokens", 1024)
+
+        return client.responses.create(
+            model=model,
+            input=input_text,
+            instructions=instructions,
+            max_output_tokens=max_output_tokens,
+            top_p=1,
+            temperature=temperature,
+            user=user,
+            stream=True,
+            tools=tools,
+        )
+    else:
+        # Fallback to old chat.completions API
+        kwargs = {}
+        if function_call_module_name is not None:
+            kwargs["functions"] = import_module(function_call_module_name).functions
+
+        return client.chat.completions.create(
+            model=model,
+            messages=messages,
+            top_p=1,
+            n=1,
+            temperature=temperature,
+            presence_penalty=0,
+            frequency_penalty=0,
+            user=user,
+            stream=True,
+            **get_model_specific_params(model),
+            **kwargs,
+        )
 
 
 def consume_openai_stream_to_write_reply(
@@ -216,7 +326,7 @@ def consume_openai_stream_to_write_reply(
     context: BoltContext,
     user_id: str,
     messages: List[Dict[str, Union[str, Dict[str, str]]]],
-    stream: Stream[Completion],
+    stream: Any,  # Changed from Stream[Completion] to Any for new API
     timeout_seconds: int,
     translate_markdown: bool,
 ):
@@ -231,61 +341,70 @@ def consume_openai_stream_to_write_reply(
     function_call: Dict[str, str] = {"name": "", "arguments": ""}
     try:
         loading_character = " ... :writing_hand:"
-        for chunk in stream:
+        for event in stream:
             spent_seconds = time.time() - start_time
             if timeout_seconds < spent_seconds:
                 raise TimeoutError()
-            # Some versions of the Azure OpenAI API return an empty choices array in the first chunk
-            # GPT-5 might also return empty choices in initial chunks
-            if not chunk.choices:
-                if context.get("OPENAI_MODEL", "").startswith("gpt-5"):
-                    # Log empty choices for GPT-5 debugging
-                    pass
-                continue
-            item = chunk.choices[0].model_dump()
-            if item.get("finish_reason") is not None:
-                break
-            delta = item.get("delta")
-            # Debug logging for GPT-5 responses - can be enabled if needed
-            # if context.get("OPENAI_MODEL", "").startswith("gpt-5"):
-            #     print(f"GPT-5 streaming chunk: delta={delta}, item={item}")
-            if not delta:
-                # No delta in this chunk, continue to next
-                continue
-            if delta.get("content") is not None:
-                word_count += 1
-                assistant_reply["content"] += delta.get("content")
-                if word_count >= 20:
 
-                    def update_message():
-                        assistant_reply_text = format_assistant_reply(
-                            assistant_reply["content"], translate_markdown
-                        )
-                        # Ensure we have some text to display
-                        if not assistant_reply_text or not assistant_reply_text.strip():
-                            # Skip update if we don't have meaningful content yet
-                            return
-                        wip_reply["message"]["text"] = assistant_reply_text
-                        update_wip_message(
-                            client=client,
-                            channel=context.channel_id,
-                            ts=wip_reply["message"]["ts"],
-                            text=assistant_reply_text + loading_character,
-                            messages=messages,
-                            user=user_id,
-                        )
+            # Handle new response streaming format
+            # The new API uses different event types
+            if hasattr(event, "type"):
+                event_type = event.type
 
-                    thread = threading.Thread(target=update_message)
-                    thread.daemon = True
-                    thread.start()
-                    threads.append(thread)
-                    word_count = 0
-            elif delta.get("function_call") is not None:
-                # Ignore function call suggestions after content has been received
-                if assistant_reply["content"] == "":
-                    for k in function_call.keys():
-                        function_call[k] += delta["function_call"].get(k) or ""
-                    assistant_reply["function_call"] = function_call
+                if event_type == "response.text.delta":
+                    # Text delta event contains partial text
+                    if hasattr(event, "text"):
+                        word_count += 1
+                        assistant_reply["content"] += event.text
+                elif event_type == "response.text.done":
+                    # Text completion event
+                    if hasattr(event, "text"):
+                        assistant_reply["content"] = event.text
+                    break
+                elif event_type == "response.done":
+                    # Response completion event
+                    break
+                elif event_type == "response.function_call":
+                    # Handle function calls if present
+                    if hasattr(event, "function_call"):
+                        function_call = event.function_call
+                    continue
+            else:
+                # Fallback to old format handling for compatibility
+                if hasattr(event, "choices") and event.choices:
+                    item = event.choices[0].model_dump()
+                    if item.get("finish_reason") is not None:
+                        break
+                    delta = item.get("delta")
+                    if delta and delta.get("content") is not None:
+                        word_count += 1
+                        assistant_reply["content"] += delta.get("content")
+
+            if word_count >= 20:
+
+                def update_message():
+                    assistant_reply_text = format_assistant_reply(
+                        assistant_reply["content"], translate_markdown
+                    )
+                    # Ensure we have some text to display
+                    if not assistant_reply_text or not assistant_reply_text.strip():
+                        # Skip update if we don't have meaningful content yet
+                        return
+                    wip_reply["message"]["text"] = assistant_reply_text
+                    update_wip_message(
+                        client=client,
+                        channel=context.channel_id,
+                        ts=wip_reply["message"]["ts"],
+                        text=assistant_reply_text + loading_character,
+                        messages=messages,
+                        user=user_id,
+                    )
+
+                thread = threading.Thread(target=update_message)
+                thread.daemon = True
+                thread.start()
+                threads.append(thread)
+                word_count = 0
 
         for t in threads:
             try:
@@ -593,13 +712,45 @@ def calculate_tokens_necessary_for_function_call(context: BoltContext) -> int:
     def _calculate_prompt_tokens(functions) -> int:
         client = create_openai_client(context)
         model = context.get("OPENAI_MODEL")
-        return client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": "hello"}],
-            user="system",
-            **get_model_specific_params(model),
-            **({"functions": functions} if functions is not None else {}),
-        ).model_dump()["usage"]["prompt_tokens"]
+        api_type = check_api_availability(client)
+
+        if api_type == "responses":
+            # Use new responses API
+            tools = (
+                [{"type": "function", "function": func} for func in functions]
+                if functions
+                else None
+            )
+            model_params = get_model_specific_params(model)
+            max_output_tokens = model_params.get(
+                "max_completion_tokens"
+            ) or model_params.get("max_tokens", 100)
+
+            response = client.responses.create(
+                model=model,
+                input="hello",
+                max_output_tokens=max_output_tokens,
+                user="system",
+                tools=tools,
+                stream=False,
+            )
+
+            # Try to get usage info from response
+            if hasattr(response, "usage") and hasattr(response.usage, "prompt_tokens"):
+                return response.usage.prompt_tokens
+            elif hasattr(response, "model_dump"):
+                return response.model_dump().get("usage", {}).get("prompt_tokens", 0)
+            else:
+                return 0
+        else:
+            # Fallback to old chat.completions API
+            return client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": "hello"}],
+                user="system",
+                **get_model_specific_params(model),
+                **({"functions": functions} if functions is not None else {}),
+            ).model_dump()["usage"]["prompt_tokens"]
 
     # TODO: If there is a better way to calculate this, replace the logic with it
     module = import_module(function_call_module_name)

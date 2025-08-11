@@ -5,7 +5,7 @@ from openai.lib.azure import AzureOpenAI
 from slack_bolt import BoltContext
 
 from .openai_constants import GPT_5_2025_08_07_MODEL
-from .openai_ops import get_model_specific_params
+from .openai_ops import get_model_specific_params, check_api_availability
 
 # All the supported languages for Slack app as of March 2023
 _locale_to_lang = {
@@ -59,36 +59,90 @@ def translate(*, openai_api_key: Optional[str], context: BoltContext, text: str)
         )
     model = GPT_5_2025_08_07_MODEL
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You're the AI model that primarily focuses on the quality of language translation. "
-                    "You always respond with the only the translated text in a format suitable for Slack user interface. "
-                    "Slack's emoji (e.g., :hourglass_flowing_sand:) and mention parts must be kept as-is. "
-                    "You don't change the meaning of sentences when translating them into a different language. "
-                    "When the given text is a single verb/noun, its translated text must be a norm/verb form too. "
-                    "When the given text is in markdown format, the format must be kept as much as possible. ",
-                },
-                {
-                    "role": "user",
-                    "content": f"Can you translate the following text into {lang} in a professional tone? "
-                    "Your response must omit any English version / pronunciation guide for the result. "
-                    "Again, no need to append any English notes and guides about the result. "
-                    "Just return the translation result. "
-                    f"Here is the original sentence you need to translate:\n{text}",
-                },
-            ],
-            top_p=1,
-            n=1,
-            temperature=1,
-            presence_penalty=0,
-            frequency_penalty=0,
-            user="system",
-            **get_model_specific_params(model),
-        )
-        translated_text = response.model_dump()["choices"][0]["message"].get("content")
+        # Check which API to use
+        api_type = check_api_availability(client)
+
+        if api_type == "responses":
+            # Use new responses API
+            instructions = (
+                "You're the AI model that primarily focuses on the quality of language translation. "
+                "You always respond with the only the translated text in a format suitable for Slack user interface. "
+                "Slack's emoji (e.g., :hourglass_flowing_sand:) and mention parts must be kept as-is. "
+                "You don't change the meaning of sentences when translating them into a different language. "
+                "When the given text is a single verb/noun, its translated text must be a norm/verb form too. "
+                "When the given text is in markdown format, the format must be kept as much as possible."
+            )
+
+            input_text = (
+                f"Can you translate the following text into {lang} in a professional tone? "
+                "Your response must omit any English version / pronunciation guide for the result. "
+                "Again, no need to append any English notes and guides about the result. "
+                "Just return the translation result. "
+                f"Here is the original sentence you need to translate:\n{text}"
+            )
+
+            model_params = get_model_specific_params(model)
+            max_output_tokens = model_params.get(
+                "max_completion_tokens"
+            ) or model_params.get("max_tokens", 1024)
+
+            response = client.responses.create(
+                model=model,
+                input=input_text,
+                instructions=instructions,
+                max_output_tokens=max_output_tokens,
+                top_p=1,
+                temperature=1,
+                user="system",
+                stream=False,
+            )
+
+            # Extract text from new response format
+            if hasattr(response, "text"):
+                translated_text = response.text
+            elif hasattr(response, "content"):
+                translated_text = response.content
+            else:
+                translated_text = (
+                    response.model_dump()
+                    .get("choices", [{}])[0]
+                    .get("message", {})
+                    .get("content")
+                )
+        else:
+            # Fallback to old chat.completions API
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You're the AI model that primarily focuses on the quality of language translation. "
+                        "You always respond with the only the translated text in a format suitable for Slack user interface. "
+                        "Slack's emoji (e.g., :hourglass_flowing_sand:) and mention parts must be kept as-is. "
+                        "You don't change the meaning of sentences when translating them into a different language. "
+                        "When the given text is a single verb/noun, its translated text must be a norm/verb form too. "
+                        "When the given text is in markdown format, the format must be kept as much as possible. ",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Can you translate the following text into {lang} in a professional tone? "
+                        "Your response must omit any English version / pronunciation guide for the result. "
+                        "Again, no need to append any English notes and guides about the result. "
+                        "Just return the translation result. "
+                        f"Here is the original sentence you need to translate:\n{text}",
+                    },
+                ],
+                top_p=1,
+                n=1,
+                temperature=1,
+                presence_penalty=0,
+                frequency_penalty=0,
+                user="system",
+                **get_model_specific_params(model),
+            )
+            translated_text = response.model_dump()["choices"][0]["message"].get(
+                "content"
+            )
         if translated_text:
             _translation_result_cache[f"{lang}:{text}"] = translated_text
             return translated_text
