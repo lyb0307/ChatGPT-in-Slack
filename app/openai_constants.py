@@ -1,4 +1,4 @@
-MAX_TOKENS = 1024
+MAX_TOKENS = 4096
 GPT_3_5_TURBO_MODEL = "gpt-3.5-turbo"
 GPT_3_5_TURBO_0301_MODEL = "gpt-3.5-turbo-0301"
 GPT_3_5_TURBO_0613_MODEL = "gpt-3.5-turbo-0613"
@@ -29,9 +29,9 @@ GPT_4_1_NANO_MODEL = "gpt-4.1-nano"
 GPT_4_1_NANO_2025_04_14_MODEL = "gpt-4.1-nano-2025-04-14"
 # GPT-5 models
 GPT_5_MODEL = "gpt-5"
-GPT_5_2025_08_08_MODEL = "gpt-5-2025-08-08"
+GPT_5_2025_08_07_MODEL = "gpt-5-2025-08-07"
 GPT_5_MINI_MODEL = "gpt-5-mini"
-GPT_5_MINI_2025_08_08_MODEL = "gpt-5-mini-2025-08-08"
+GPT_5_MINI_2025_08_07_MODEL = "gpt-5-mini-2025-08-07"
 
 # Tuple: (tokens_per_message, tokens_per_name)
 MODEL_TOKENS = {
@@ -65,8 +65,8 @@ MODEL_TOKENS = {
     # GPT-4o mini
     GPT_4O_MINI_2024_07_18_MODEL: (3, 1),
     # GPT-5
-    GPT_5_2025_08_08_MODEL: (3, 1),
-    GPT_5_MINI_2025_08_08_MODEL: (3, 1),
+    GPT_5_2025_08_07_MODEL: (3, 1),
+    GPT_5_MINI_2025_08_07_MODEL: (3, 1),
 }
 
 # Note that these fallbacks may change over time.
@@ -81,6 +81,6 @@ MODEL_FALLBACKS = {
     GPT_4_1_MODEL: GPT_4_1_2025_04_14_MODEL,
     GPT_4_1_MINI_MODEL: GPT_4_1_MINI_2025_04_14_MODEL,
     GPT_4_1_NANO_MODEL: GPT_4_1_NANO_2025_04_14_MODEL,
-    GPT_5_MODEL: GPT_5_2025_08_08_MODEL,
-    GPT_5_MINI_MODEL: GPT_5_MINI_2025_08_08_MODEL,
+    GPT_5_MODEL: GPT_5_2025_08_07_MODEL,
+    GPT_5_MINI_MODEL: GPT_5_MINI_2025_08_07_MODEL,
 }

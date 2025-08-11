@@ -46,9 +46,9 @@ from app.openai_constants import (
     GPT_4_1_NANO_MODEL,
     GPT_4_1_NANO_2025_04_14_MODEL,
     GPT_5_MODEL,
-    GPT_5_2025_08_08_MODEL,
+    GPT_5_2025_08_07_MODEL,
     GPT_5_MINI_MODEL,
-    GPT_5_MINI_2025_08_08_MODEL,
+    GPT_5_MINI_2025_08_07_MODEL,
     MODEL_TOKENS,
     MODEL_FALLBACKS,
 )
@@ -236,12 +236,22 @@ def consume_openai_stream_to_write_reply(
             if timeout_seconds < spent_seconds:
                 raise TimeoutError()
             # Some versions of the Azure OpenAI API return an empty choices array in the first chunk
-            if context.get("OPENAI_API_TYPE") == "azure" and not chunk.choices:
+            # GPT-5 might also return empty choices in initial chunks
+            if not chunk.choices:
+                if context.get("OPENAI_MODEL", "").startswith("gpt-5"):
+                    # Log empty choices for GPT-5 debugging
+                    pass
                 continue
             item = chunk.choices[0].model_dump()
             if item.get("finish_reason") is not None:
                 break
             delta = item.get("delta")
+            # Debug logging for GPT-5 responses - can be enabled if needed
+            # if context.get("OPENAI_MODEL", "").startswith("gpt-5"):
+            #     print(f"GPT-5 streaming chunk: delta={delta}, item={item}")
+            if not delta:
+                # No delta in this chunk, continue to next
+                continue
             if delta.get("content") is not None:
                 word_count += 1
                 assistant_reply["content"] += delta.get("content")
@@ -251,6 +261,10 @@ def consume_openai_stream_to_write_reply(
                         assistant_reply_text = format_assistant_reply(
                             assistant_reply["content"], translate_markdown
                         )
+                        # Ensure we have some text to display
+                        if not assistant_reply_text or not assistant_reply_text.strip():
+                            # Skip update if we don't have meaningful content yet
+                            return
                         wip_reply["message"]["text"] = assistant_reply_text
                         update_wip_message(
                             client=client,
@@ -321,6 +335,9 @@ def consume_openai_stream_to_write_reply(
         assistant_reply_text = format_assistant_reply(
             assistant_reply["content"], translate_markdown
         )
+        # Ensure we have some text to display
+        if not assistant_reply_text:
+            assistant_reply_text = ":hourglass_flowing_sand: Processing..."
         wip_reply["message"]["text"] = assistant_reply_text
         update_wip_message(
             client=client,
@@ -330,6 +347,21 @@ def consume_openai_stream_to_write_reply(
             messages=messages,
             user=user_id,
         )
+    except Exception as e:
+        # Log exception and update message with error
+        print(f"Error in consume_openai_stream_to_write_reply: {e}")
+        error_text = (
+            f":warning: An error occurred while processing the response: {str(e)}"
+        )
+        update_wip_message(
+            client=client,
+            channel=context.channel_id,
+            ts=wip_reply["message"]["ts"],
+            text=error_text,
+            messages=messages,
+            user=user_id,
+        )
+        raise
     finally:
         for t in threads:
             try:
@@ -380,11 +412,11 @@ def context_length(
         # Note that GPT_4_1_NANO_MODEL may change over time. Return context length assuming GPT_4_1_NANO_2025_04_14_MODEL.
         return context_length(model=GPT_4_1_NANO_2025_04_14_MODEL)
     elif model == GPT_5_MODEL:
-        # Note that GPT_5_MODEL may change over time. Return context length assuming GPT_5_2025_08_08_MODEL.
-        return context_length(model=GPT_5_2025_08_08_MODEL)
+        # Note that GPT_5_MODEL may change over time. Return context length assuming GPT_5_2025_08_07_MODEL.
+        return context_length(model=GPT_5_2025_08_07_MODEL)
     elif model == GPT_5_MINI_MODEL:
-        # Note that GPT_5_MINI_MODEL may change over time. Return context length assuming GPT_5_MINI_2025_08_08_MODEL.
-        return context_length(model=GPT_5_MINI_2025_08_08_MODEL)
+        # Note that GPT_5_MINI_MODEL may change over time. Return context length assuming GPT_5_MINI_2025_08_07_MODEL.
+        return context_length(model=GPT_5_MINI_2025_08_07_MODEL)
     elif model == GPT_3_5_TURBO_0301_MODEL or model == GPT_3_5_TURBO_0613_MODEL:
         return 4096
     elif (
@@ -408,9 +440,9 @@ def context_length(
         return 1048576
     elif (
         model == GPT_5_MODEL
-        or model == GPT_5_2025_08_08_MODEL
+        or model == GPT_5_2025_08_07_MODEL
         or model == GPT_5_MINI_MODEL
-        or model == GPT_5_MINI_2025_08_08_MODEL
+        or model == GPT_5_MINI_2025_08_07_MODEL
     ):
         return 2097152  # 2M context for GPT-5 models
     elif (

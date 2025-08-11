@@ -113,6 +113,9 @@ def update_wip_message(
     user: str,
 ) -> SlackResponse:
     system_messages = [msg for msg in messages if msg["role"] == "system"]
+    # Ensure text is not empty - Slack API requires non-empty text
+    if not text or not text.strip():
+        text = ":hourglass_flowing_sand: Processing..."
     return client.chat_update(
         channel=channel,
         ts=ts,

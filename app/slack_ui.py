@@ -330,6 +330,21 @@ def build_home_tab(
             ),
         )
     )
+
+    # Fallback to original English text if translation fails or returns insufficient results
+    if len(translated_sentences) < 9:
+        translated_sentences = [
+            message,
+            DEFAULT_HOME_TAB_CONFIGURE_LABEL,
+            "Can you proofread the following sentence without changing its meaning?",
+            "(Start a chat from scratch)",
+            "Start",
+            "Chat Templates",
+            "Configuration",
+            "Can you generate an image as I instruct you?",
+            "Can you generate variations for my images?",
+        ]
+
     message = translated_sentences[0]
     configure_label = translated_sentences[1]
     proofreading = translated_sentences[2]
