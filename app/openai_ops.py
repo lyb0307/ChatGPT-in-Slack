@@ -60,14 +60,21 @@ from app.slack_ops import update_wip_message
 
 
 def check_api_availability(client) -> str:
-    """Check which OpenAI API is available"""
+    """Check which OpenAI API to use"""
+    import os
+
+    # Check if new API is explicitly enabled via environment variable
+    use_new_api = os.getenv("USE_NEW_OPENAI_API", "false").lower() == "true"
+
     has_responses = hasattr(client, "responses") and hasattr(client.responses, "create")
     has_chat = hasattr(client, "chat") and hasattr(client.chat, "completions")
 
-    # Prefer new API if available, fallback to old API
-    if has_responses:
+    # Only use new API if explicitly enabled AND available
+    if use_new_api and has_responses:
+        print("Using new OpenAI responses API")
         return "responses"
     elif has_chat:
+        # Default to old API which we know works
         return "chat"
     else:
         raise ValueError("No compatible OpenAI API found")
@@ -341,14 +348,28 @@ def consume_openai_stream_to_write_reply(
     function_call: Dict[str, str] = {"name": "", "arguments": ""}
     try:
         loading_character = " ... :writing_hand:"
+
         for event in stream:
             spent_seconds = time.time() - start_time
             if timeout_seconds < spent_seconds:
                 raise TimeoutError()
 
-            # Handle new response streaming format
-            # The new API uses different event types
-            if hasattr(event, "type"):
+            # Skip empty events (common with some API versions)
+            if not event:
+                continue
+
+            # Try to handle as old format first (most common)
+            if hasattr(event, "choices") and event.choices:
+                # Old chat.completions API format
+                item = event.choices[0].model_dump()
+                if item.get("finish_reason") is not None:
+                    break
+                delta = item.get("delta")
+                if delta and delta.get("content") is not None:
+                    word_count += 1
+                    assistant_reply["content"] += delta.get("content")
+            elif hasattr(event, "type"):
+                # New responses API format (when USE_NEW_OPENAI_API=true)
                 event_type = event.type
 
                 if event_type == "response.text.delta":
@@ -369,16 +390,6 @@ def consume_openai_stream_to_write_reply(
                     if hasattr(event, "function_call"):
                         function_call = event.function_call
                     continue
-            else:
-                # Fallback to old format handling for compatibility
-                if hasattr(event, "choices") and event.choices:
-                    item = event.choices[0].model_dump()
-                    if item.get("finish_reason") is not None:
-                        break
-                    delta = item.get("delta")
-                    if delta and delta.get("content") is not None:
-                        word_count += 1
-                        assistant_reply["content"] += delta.get("content")
 
             if word_count >= 20:
 
