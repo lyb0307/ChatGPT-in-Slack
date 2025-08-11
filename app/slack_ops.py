@@ -16,6 +16,7 @@ __all__ = [
     "is_this_app_mentioned",
     "build_thread_replies_as_combined_text",
     "post_wip_message",
+    "split_long_message",
     "update_wip_message",
     "extract_state_value",
     "can_send_image_url_to_openai",
@@ -104,6 +105,93 @@ def post_wip_message(
     )
 
 
+def split_long_message(text: str, max_length: int = 3000) -> List[str]:
+    """
+    Split a long message into multiple parts without breaking words or code blocks.
+
+    Args:
+        text: The text to split
+        max_length: Maximum length for each message chunk (default 3000 for Slack)
+
+    Returns:
+        List of message chunks
+    """
+    if len(text) <= max_length:
+        return [text]
+
+    chunks = []
+    current_chunk = ""
+
+    # Check if we're in a code block
+    in_code_block = False
+    code_block_delimiter = "```"
+
+    # Handle text with or without line breaks
+    if "\n" in text:
+        lines = text.split("\n")
+    else:
+        # For continuous text without line breaks, try to split by words first
+        if " " in text:
+            words = text.split(" ")
+            lines = []
+            current_line = ""
+            for word in words:
+                if len(current_line) + len(word) + 1 <= max_length:
+                    current_line = current_line + " " + word if current_line else word
+                else:
+                    if current_line:
+                        lines.append(current_line)
+                    current_line = word
+            if current_line:
+                lines.append(current_line)
+        else:
+            # For continuous text without spaces, split by character chunks
+            lines = []
+            for i in range(
+                0, len(text), max_length - 6
+            ):  # Reserve space for "..." markers
+                lines.append(text[i : i + max_length - 6])
+
+    for i, line in enumerate(lines):
+        # Track code block state
+        if code_block_delimiter in line:
+            in_code_block = not in_code_block
+
+        # Check if adding this line would exceed the limit
+        separator = "\n" if current_chunk and i > 0 else ""
+        test_chunk = current_chunk + separator + line
+
+        if len(test_chunk) > max_length and current_chunk:
+            # If we're in a code block, close it temporarily
+            if in_code_block:
+                current_chunk += "\n```"
+
+            # Add continuation marker
+            if not current_chunk.endswith("..."):
+                current_chunk += "..." if "\n" not in text else "\n..."
+
+            chunks.append(current_chunk)
+
+            # Start new chunk
+            current_chunk = "..." if not line.startswith("...") else ""
+
+            # If we were in a code block, reopen it
+            if in_code_block:
+                current_chunk += "\n```\n" + line if current_chunk else "```\n" + line
+            else:
+                current_chunk += (
+                    line if not current_chunk or current_chunk == "..." else "\n" + line
+                )
+        else:
+            current_chunk = test_chunk
+
+    # Add the last chunk if there's content
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    return chunks
+
+
 def update_wip_message(
     client: WebClient,
     channel: str,
@@ -116,15 +204,31 @@ def update_wip_message(
     # Ensure text is not empty - Slack API requires non-empty text
     if not text or not text.strip():
         text = ":hourglass_flowing_sand: Processing..."
-    return client.chat_update(
+
+    # Split long messages
+    message_chunks = split_long_message(text)
+
+    # Update the original message with the first chunk
+    response = client.chat_update(
         channel=channel,
         ts=ts,
-        text=text,
+        text=message_chunks[0],
         metadata={
             "event_type": "chat-gpt-convo",
             "event_payload": {"messages": system_messages, "user": user},
         },
     )
+
+    # Send additional chunks as thread replies if needed
+    if len(message_chunks) > 1:
+        for chunk in message_chunks[1:]:
+            client.chat_postMessage(
+                channel=channel,
+                thread_ts=ts,
+                text=chunk,
+            )
+
+    return response
 
 
 # ----------------------------
