@@ -86,6 +86,37 @@ class TestSplitLongMessage(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0], text)
 
+    def test_chinese_text_byte_length(self):
+        """Test that Chinese text is split based on byte length, not character count"""
+        # Chinese characters typically take 3 bytes each in UTF-8
+        # 100 Chinese characters = ~300 bytes
+        chinese_text = "你好世界" * 100  # 400 characters, ~1200 bytes
+
+        # With max_length of 500 bytes, this should split into multiple chunks
+        result = split_long_message(chinese_text, max_length=500)
+
+        # Should have multiple chunks
+        self.assertGreater(len(result), 1)
+
+        # Each chunk should be under 500 bytes
+        for chunk in result:
+            self.assertLessEqual(len(chunk.encode("utf-8")), 500)
+
+    def test_mixed_chinese_english_text(self):
+        """Test handling of mixed Chinese and English text"""
+        # Mix of ASCII (1 byte) and Chinese (3 bytes) characters
+        mixed_text = "Hello 你好 " * 50  # Mix of English and Chinese
+
+        result = split_long_message(mixed_text, max_length=300)
+
+        # Should split into multiple chunks
+        self.assertGreater(len(result), 1)
+
+        # Each chunk should be under 300 bytes + some overhead for continuation markers
+        for chunk in result:
+            # Allow for "..." markers which add a few extra bytes
+            self.assertLessEqual(len(chunk.encode("utf-8")), 310)
+
 
 if __name__ == "__main__":
     unittest.main()

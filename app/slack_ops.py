@@ -111,12 +111,13 @@ def split_long_message(text: str, max_length: int = 2000) -> List[str]:
 
     Args:
         text: The text to split
-        max_length: Maximum length for each message chunk (default 3000 for Slack)
+        max_length: Maximum byte length for each message chunk (default 2000 for Slack)
 
     Returns:
         List of message chunks
     """
-    if len(text) <= max_length:
+    # Check byte length instead of character length
+    if len(text.encode("utf-8")) <= max_length:
         return [text]
 
     chunks = []
@@ -136,8 +137,9 @@ def split_long_message(text: str, max_length: int = 2000) -> List[str]:
             lines = []
             current_line = ""
             for word in words:
-                if len(current_line) + len(word) + 1 <= max_length:
-                    current_line = current_line + " " + word if current_line else word
+                test_line = current_line + " " + word if current_line else word
+                if len(test_line.encode("utf-8")) <= max_length:
+                    current_line = test_line
                 else:
                     if current_line:
                         lines.append(current_line)
@@ -145,23 +147,33 @@ def split_long_message(text: str, max_length: int = 2000) -> List[str]:
             if current_line:
                 lines.append(current_line)
         else:
-            # For continuous text without spaces, split by character chunks
+            # For continuous text without spaces, split by byte chunks
             lines = []
-            for i in range(
-                0, len(text), max_length - 6
-            ):  # Reserve space for "..." markers
-                lines.append(text[i : i + max_length - 6])
+            text_bytes = text.encode("utf-8")
+            start = 0
+            while start < len(text_bytes):
+                # Find a safe split point that doesn't break multi-byte characters
+                end = min(start + max_length - 6, len(text_bytes))
+                # Decode and handle potential partial characters at boundaries
+                while end > start:
+                    try:
+                        chunk = text_bytes[start:end].decode("utf-8")
+                        lines.append(chunk)
+                        start = end
+                        break
+                    except UnicodeDecodeError:
+                        end -= 1
 
     for i, line in enumerate(lines):
         # Track code block state
         if code_block_delimiter in line:
             in_code_block = not in_code_block
 
-        # Check if adding this line would exceed the limit
+        # Check if adding this line would exceed the byte limit
         separator = "\n" if current_chunk and i > 0 else ""
         test_chunk = current_chunk + separator + line
 
-        if len(test_chunk) > max_length and current_chunk:
+        if len(test_chunk.encode("utf-8")) > max_length and current_chunk:
             # If we're in a code block, close it temporarily
             if in_code_block:
                 current_chunk += "\n```"
