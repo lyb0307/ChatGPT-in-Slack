@@ -1,7 +1,10 @@
 from typing import Optional
 from typing import List, Dict
+import time, json
+from collections import OrderedDict
 
 import requests
+from httpcore._synchronization import ThreadLock
 
 from slack_sdk.web import WebClient, SlackResponse
 from slack_sdk.errors import SlackApiError
@@ -83,6 +86,30 @@ def build_thread_replies_as_combined_text(
 # WIP reply message stuff
 # ----------------------------
 
+# Cache for tracking chunk messages during streaming
+# Key: (channel, parent_ts), Value: dict with 'timestamps' list and 'last_updated' time
+_chunk_messages_cache = OrderedDict()
+_CACHE_MAX_SIZE = 100  # Maximum number of conversations to cache
+_CACHE_TTL_SECONDS = 300  # 5 minutes TTL for cache entries
+
+
+def _cleanup_cache():
+    """Remove old cache entries to prevent unlimited memory growth."""
+    current_time = time.time()
+
+    # Remove entries older than TTL
+    keys_to_remove = []
+    for key, value in _chunk_messages_cache.items():
+        if current_time - value.get("last_updated", 0) > _CACHE_TTL_SECONDS:
+            keys_to_remove.append(key)
+
+    for key in keys_to_remove:
+        del _chunk_messages_cache[key]
+
+    # Enforce max size limit (LRU eviction)
+    while len(_chunk_messages_cache) > _CACHE_MAX_SIZE:
+        _chunk_messages_cache.popitem(last=False)  # Remove oldest entry
+
 
 def post_wip_message(
     *,
@@ -94,6 +121,14 @@ def post_wip_message(
     user: str,
 ) -> SlackResponse:
     system_messages = [msg for msg in messages if msg["role"] == "system"]
+    # Clear any cached chunk messages for this new message
+    cache_key = (channel, thread_ts)
+    if cache_key in _chunk_messages_cache:
+        del _chunk_messages_cache[cache_key]
+
+    # Run periodic cache cleanup
+    _cleanup_cache()
+
     return client.chat_postMessage(
         channel=channel,
         thread_ts=thread_ts,
@@ -105,13 +140,13 @@ def post_wip_message(
     )
 
 
-def split_long_message(text: str, max_length: int = 2000) -> List[str]:
+def split_long_message(text: str, max_length: int = 4000) -> List[str]:
     """
     Split a long message into multiple parts without breaking words or code blocks.
 
     Args:
         text: The text to split
-        max_length: Maximum byte length for each message chunk (default 2000 for Slack)
+        max_length: Maximum byte length for each message chunk (default 4000 for Slack)
 
     Returns:
         List of message chunks
@@ -178,14 +213,10 @@ def split_long_message(text: str, max_length: int = 2000) -> List[str]:
             if in_code_block:
                 current_chunk += "\n```"
 
-            # Add continuation marker
-            if not current_chunk.endswith("..."):
-                current_chunk += "..." if "\n" not in text else "\n..."
-
             chunks.append(current_chunk)
 
             # Start new chunk
-            current_chunk = "..." if not line.startswith("...") else ""
+            current_chunk = ""
 
             # If we were in a code block, reopen it
             if in_code_block:
@@ -220,25 +251,68 @@ def update_wip_message(
     # Split long messages
     message_chunks = split_long_message(text)
 
-    # Update the original message with the first chunk
-    response = client.chat_update(
-        channel=channel,
-        ts=ts,
-        text=message_chunks[0],
-        metadata={
-            "event_type": "chat-gpt-convo",
-            "event_payload": {"messages": system_messages, "user": user},
-        },
-    )
+    # Get the parent thread timestamp (in case this message is itself a reply)
+    # We use ts as the thread_ts since messages are posted as replies to ts
+    thread_ts = ts
+    cache_key = (channel, thread_ts)
 
-    # Send additional chunks as thread replies if needed
-    if len(message_chunks) > 1:
-        for chunk in message_chunks[1:]:
-            client.chat_postMessage(
+    # Get or initialize the chunk message cache for this thread
+    if cache_key not in _chunk_messages_cache:
+        _chunk_messages_cache[cache_key] = {
+            "timestamps": [ts],
+            "last_updated": time.time(),
+            "thread_lock": ThreadLock(),
+        }
+
+    # Update access time (moves to end of OrderedDict)
+    _chunk_messages_cache.move_to_end(cache_key)
+    thread_lock = _chunk_messages_cache[cache_key]["thread_lock"]
+    with thread_lock:
+        _chunk_messages_cache[cache_key]["last_updated"] = time.time()
+
+        chunk_timestamps = _chunk_messages_cache[cache_key]["timestamps"]
+
+        last_chunk = message_chunks[-1]
+
+        if len(chunk_timestamps) < len(message_chunks):
+            response = client.chat_update(
                 channel=channel,
-                thread_ts=ts,
-                text=chunk,
+                ts=chunk_timestamps[-1],
+                text=message_chunks[-2],
+                metadata={
+                    "event_type": "chat-gpt-convo",
+                    "event_payload": {"messages": system_messages, "user": user},
+                },
             )
+            response = client.chat_postMessage(
+                channel=channel,
+                thread_ts=thread_ts,
+                text=last_chunk,
+            )
+            chunk_timestamps.append(response["ts"])
+        else:
+            response = client.chat_update(
+                channel=channel,
+                ts=chunk_timestamps[-1],
+                text=last_chunk,
+                metadata={
+                    "event_type": "chat-gpt-convo",
+                    "event_payload": {"messages": system_messages, "user": user},
+                },
+            )
+
+        # Clear cache for completed messages (no loading character)
+        if not text.endswith(":hourglass_flowing_sand:") and not text.endswith(":wave:"):
+            # Message is complete, we can remove it from cache after a short delay
+            # Keep it briefly in case of final adjustments
+            if cache_key in _chunk_messages_cache:
+                _chunk_messages_cache[cache_key]["last_updated"] = (
+                    time.time() - _CACHE_TTL_SECONDS + 30
+                )  # Keep for 30 more seconds
+
+    # Periodically clean up old cache entries
+    if len(_chunk_messages_cache) > _CACHE_MAX_SIZE // 2:
+        _cleanup_cache()
 
     return response
 
